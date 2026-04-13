@@ -1,0 +1,421 @@
+---
+title: "Topic 11: Orthodontic Growth Patterns in Children"
+author: "Student Name"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+execute:
+  echo: true
+  warning: false
+  message: false
+editor: visual
+---
+
+# Introduction
+
+Growth measurements taken repeatedly on the same child are correlated because observations from one child are more similar to each other than to observations from other children. Because of this, ordinary linear regression is not appropriate since it assumes independence of observations. A linear mixed model is more suitable because it allows us to study the average growth pattern while also accounting for differences between children.
+
+In this analysis, we use the **Orthodont** dataset from the `nlme` package. The outcome variable is the distance from the pituitary to the pterygomaxillary fissure. This distance was measured repeatedly for each child at ages 8, 10, 12, and 14 years. We want to examine how this distance changes with age and whether the growth pattern differs between boys and girls.
+
+# Objectives
+
+The objectives of this analysis are:
+
+1.  To describe the Orthodont dataset.
+2.  To explore the growth pattern of distance over age.
+3.  To fit appropriate linear mixed models for repeated measurements.
+4.  To compare candidate models and choose the best one.
+5.  To interpret the final model in simple language.
+6.  To assess model assumptions using diagnostic plots.
+
+# Data and Packages
+
+```{r}
+library(nlme)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+```
+
+```{r}
+data("Orthodont", package = "nlme")
+df <- Orthodont
+```
+
+# Data Inspection
+
+```{r}
+str(df)
+head(df)
+summary(df)
+```
+
+```{r}
+dim(df)
+table(df$Sex)
+table(df$age)
+length(unique(df$Subject))
+```
+
+## Variable Description
+
+```{r}
+var_table <- data.frame(
+  Variable = c("distance", "age", "Sex", "Subject"),
+  Description = c(
+    "Distance from pituitary to pterygomaxillary fissure",
+    "Age of child in years",
+    "Sex of child (Male/Female)",
+    "Child identification number"
+  ),
+  Type = c("Continuous", "Numeric", "Categorical", "Grouping factor")
+)
+
+kable(var_table, caption = "Data Dictionary") %>%
+  kable_styling(full_width = FALSE)
+```
+
+# Exploratory Data Analysis
+
+## Summary Statistics
+
+```{r}
+df %>%
+  group_by(Sex, age) %>%
+  summarise(
+    n = n(),
+    mean_distance = mean(distance),
+    sd_distance = sd(distance),
+    min_distance = min(distance),
+    max_distance = max(distance),
+    .groups = "drop"
+  ) %>%
+  kable(caption = "Summary Statistics by Sex and Age") %>%
+  kable_styling(full_width = FALSE)
+```
+
+## Overall Distribution of Distance
+
+```{r}
+ggplot(df, aes(x = distance)) +
+  geom_histogram(bins = 12) +
+  labs(
+    title = "Distribution of Distance",
+    x = "Distance",
+    y = "Frequency"
+  )
+```
+
+### Interpretation
+
+The histogram shows the overall distribution of the response variable. The distance values are spread over a reasonable range and do not show severe skewness. This suggests that a linear mixed model may be appropriate.
+
+## Boxplot of Distance by Sex
+
+```{r}
+ggplot(df, aes(x = Sex, y = distance)) +
+  geom_boxplot() +
+  labs(
+    title = "Distance by Sex",
+    x = "Sex",
+    y = "Distance"
+  )
+```
+
+### Interpretation
+
+This boxplot compares the distribution of distance for boys and girls. If the male group tends to have higher values, it suggests that boys may have larger average craniofacial distances than girls. However, we still need a model to check whether this difference remains after accounting for age and repeated measurements.
+
+## Distance by Age
+
+```{r}
+ggplot(df, aes(x = factor(age), y = distance)) +
+  geom_boxplot() +
+  labs(
+    title = "Distance by Age",
+    x = "Age",
+    y = "Distance"
+  )
+```
+
+### Interpretation
+
+The boxplots by age help us see whether the average distance increases as children grow older. If the median distance rises from age 8 to age 14, that is evidence of growth over time.
+
+## Scatter Plot by Sex
+
+```{r}
+ggplot(df, aes(x = age, y = distance, shape = Sex)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Distance versus Age by Sex",
+    x = "Age",
+    y = "Distance"
+  )
+```
+
+### Interpretation
+
+This plot shows the relationship between age and distance for boys and girls. The fitted lines give a first idea of whether distance increases with age and whether the rate of increase is similar for both sexes.
+
+## Spaghetti Plot
+
+```{r}
+ggplot(df, aes(x = age, y = distance, group = Subject, linetype = Sex)) +
+  geom_line(alpha = 0.6) +
+  geom_point() +
+  labs(
+    title = "Individual Growth Profiles",
+    x = "Age",
+    y = "Distance"
+  )
+```
+
+### Interpretation
+
+The spaghetti plot shows each child’s growth trajectory. Most lines move upward, meaning distance tends to increase with age. The lines also start from different levels, which suggests that children differ in their baseline distance. This supports using a mixed model with child-specific random effects.
+
+# Model Building
+
+Because the response is continuous and each child was measured repeatedly over time, we use **linear mixed models**.
+
+We consider the following candidate models:
+
+1.  **Model 1:** Random intercept model with age and sex.
+2.  **Model 2:** Random intercept model with age, sex, and age-by-sex interaction.
+3.  **Model 3:** Random intercept and random slope model with age, sex, and age-by-sex interaction.
+
+# Fit Candidate Models
+
+## Model 1: Random Intercept Model
+
+```{r}
+m1 <- lme(
+  distance ~ age + Sex,
+  random = ~ 1 | Subject,
+  data = df,
+  method = "REML"
+)
+
+summary(m1)
+```
+
+## Model 2: Random Intercept Model with Interaction
+
+```{r}
+m2 <- lme(
+  distance ~ age * Sex,
+  random = ~ 1 | Subject,
+  data = df,
+  method = "REML"
+)
+
+summary(m2)
+```
+
+## Model 3: Random Intercept and Random Slope Model
+
+```{r}
+m3 <- lme(
+  distance ~ age * Sex,
+  random = ~ age | Subject,
+  data = df,
+  method = "REML"
+)
+
+summary(m3)
+```
+
+# Compare Candidate Models
+
+To compare fixed effects properly, models are usually compared using maximum likelihood.
+
+```{r}
+m1_ml <- update(m1, method = "ML")
+m2_ml <- update(m2, method = "ML")
+m3_ml <- update(m3, method = "ML")
+```
+
+## Information Criteria
+
+```{r}
+model_comp <- data.frame(
+  Model = c(
+    "m1: Random intercept + age + Sex",
+    "m2: Random intercept + age * Sex",
+    "m3: Random intercept and slope + age * Sex"
+  ),
+  AIC = c(AIC(m1_ml), AIC(m2_ml), AIC(m3_ml)),
+  BIC = c(BIC(m1_ml), BIC(m2_ml), BIC(m3_ml)),
+  logLik = c(logLik(m1_ml), logLik(m2_ml), logLik(m3_ml))
+)
+
+kable(model_comp, digits = 3, caption = "Model Comparison Using AIC, BIC and Log-Likelihood") %>%
+  kable_styling(full_width = FALSE)
+```
+
+## Likelihood Ratio Tests
+
+```{r}
+anova(m1_ml, m2_ml, m3_ml)
+```
+
+# Choice of Best Model
+
+The best model should be chosen by looking at:
+
+-   lower AIC and BIC,
+-   larger log-likelihood,
+-   meaningful fixed effects,
+-   and whether the more complex model improves fit enough to justify extra parameters.
+
+In many analyses of the Orthodont data, the **random intercept and random slope model** often fits better because children may differ not only in their starting distance but also in their rate of growth over age. We therefore compare all models carefully and select the one with the strongest statistical support.
+
+For the final model below, we refit the selected model using REML.
+
+```{r}
+final_model <- m3
+summary(final_model)
+```
+
+# Final Model Results
+
+## Fixed Effects Table
+
+```{r}
+fixed_tab <- summary(final_model)$tTable
+fixed_tab <- as.data.frame(fixed_tab)
+fixed_tab$Term <- rownames(fixed_tab)
+fixed_tab <- fixed_tab[, c("Term", "Value", "Std.Error", "DF", "t-value", "p-value")]
+
+kable(fixed_tab, digits = 4, caption = "Fixed Effects from the Final Model") %>%
+  kable_styling(full_width = FALSE)
+```
+
+## Random Effects
+
+```{r}
+VarCorr(final_model)
+```
+
+# Interpretation of the Final Model
+
+Use the estimated coefficients from your output when writing the final interpretation. A general interpretation is given below.
+
+## Age Effect
+
+The coefficient for age shows the average increase in distance for each additional year of age. If this coefficient is positive, it means the craniofacial distance increases as children grow older.
+
+## Sex Effect
+
+The coefficient for sex compares boys and girls at the reference age. A positive value for males means boys tend to have a larger average distance than girls, after accounting for repeated measurements.
+
+## Age by Sex Interaction
+
+The interaction term tells us whether the growth rate over age is different for boys and girls. If this term is statistically significant, then the slope of growth is not the same for the two groups. If it is not significant, then both sexes grow at about the same rate, even if one group starts at a different average level.
+
+## Random Effects Interpretation
+
+The random intercept means each child has their own starting level of distance. The random slope means each child may also grow at a different rate over age. This is realistic because not all children follow exactly the same growth pattern.
+
+# Estimated Mean Profiles
+
+```{r}
+newdat <- expand.grid(
+  age = seq(8, 14, by = 1),
+  Sex = levels(df$Sex)
+)
+
+newdat$pred <- predict(final_model, newdata = newdat, level = 0)
+
+ggplot(df, aes(x = age, y = distance, group = Subject)) +
+  geom_line(alpha = 0.25) +
+  geom_point(alpha = 0.4) +
+  geom_line(
+    data = newdat,
+    aes(x = age, y = pred, group = Sex, linetype = Sex),
+    linewidth = 1.2
+  ) +
+  labs(
+    title = "Observed Growth Curves with Fitted Mean Profiles",
+    x = "Age",
+    y = "Distance"
+  )
+```
+
+### Interpretation
+
+The thin lines represent individual children, while the thicker fitted lines show the average growth pattern for each sex. This figure helps us see whether boys and girls have similar or different growth trends over time.
+
+# Model Diagnostics
+
+## Residuals vs Fitted Values
+
+```{r}
+plot(final_model, resid(., type = "pearson") ~ fitted(.),
+     abline = 0)
+```
+
+### Interpretation
+
+This plot checks whether the residuals are randomly scattered around zero. A good model should not show a strong pattern or funnel shape. If the spread is fairly even, the assumptions are reasonably met.
+
+## Normal Q-Q Plot of Residuals
+
+```{r}
+qqnorm(resid(final_model), main = "Normal Q-Q Plot of Residuals")
+qqline(resid(final_model))
+```
+
+### Interpretation
+
+If the residual points lie close to the straight line, the residuals are approximately normal. Small departures at the ends are common and usually acceptable if they are not severe.
+
+## Normal Q-Q Plot of Random Effects
+
+```{r}
+re <- ranef(final_model)
+
+qqnorm(re[,1], main = "Q-Q Plot of Random Intercepts")
+qqline(re[,1])
+```
+
+```{r}
+if(ncol(re) > 1){
+  qqnorm(re[,2], main = "Q-Q Plot of Random Slopes")
+  qqline(re[,2])
+}
+```
+
+### Interpretation
+
+These plots assess whether the child-specific random effects are approximately normally distributed. If the points follow the line reasonably well, the normality assumption for random effects is acceptable.
+
+# Final Interpretation
+
+Based on the linear mixed model, the distance generally increases with age, showing that craniofacial growth occurs over time. Boys may have a higher average distance than girls, depending on the estimated sex coefficient. If the interaction between age and sex is important, it means boys and girls do not grow at the same rate; otherwise, they have similar growth slopes but may differ in average level.
+
+The mixed model is preferred because it accounts for the fact that repeated observations from the same child are correlated. It also allows each child to have their own growth pattern, which makes the analysis more realistic and more appropriate than ordinary regression.
+
+# Conclusion
+
+This analysis used the Orthodont data to study growth patterns in children. Since the measurements were repeated on the same children, a linear mixed model was the correct method. After comparing candidate models, the best model was selected using statistical criteria and biological meaning. The results show that age is an important predictor of craniofacial distance, and sex may also play a role in the growth pattern. Overall, the mixed model provides a clear and appropriate way to understand growth changes over time.
+
+# Appendix: Optional Simpler Model Output Table
+
+```{r}
+data.frame(
+  Statistic = c("AIC", "BIC", "logLik"),
+  Value = c(AIC(final_model), BIC(final_model), logLik(final_model))
+) %>%
+  kable(digits = 3, caption = "Fit Statistics for the Final Model") %>%
+  kable_styling(full_width = FALSE)
+```
