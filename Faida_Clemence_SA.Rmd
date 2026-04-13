@@ -1,0 +1,133 @@
+
+---
+title: "Flexible Modeling and Competing Risks"
+author: "Faida Clemence NIYONSHIMIYE"
+date: "`r Sys.Date()`"
+output: html_document
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+
+
+
+
+```{r}
+library(survival)
+library(rstpm2)
+
+data(lung, package = "survival")
+
+str(lung)
+head(lung)
+```
+```{r}
+lung$status2 <- ifelse(lung$status == 2, 1, 0)
+
+table(lung$status, lung$status2)
+```
+
+```{r}
+#Fit the Cox and Royston-Parmar models
+cox_fit <- coxph(Surv(time, status2) ~ sex + age, data = lung)
+summary(cox_fit)
+
+rp_fit <- stpm2(Surv(time, status2) ~ sex + age, data = lung, df = 4)
+summary(rp_fit)
+```
+
+```{r}
+#Compare coefficient estimates
+cox_coef <- coef(cox_fit)
+rp_coef  <- coef(rp_fit)[c("sex", "age")]
+
+cox_coef
+rp_coef
+```
+```{r}
+#Cox cumulative baseline hazard
+cox_bh <- basehaz(cox_fit, centered = FALSE)
+
+head(cox_bh)
+```
+```{r}
+#Royston-Parmar hazard estimates over time
+tgrid <- seq(min(lung$time), max(lung$time), length.out = 200)
+
+newdat <- data.frame(
+  time = tgrid,
+  sex  = 1,
+  age  = mean(lung$age, na.rm = TRUE)
+)
+
+rp_haz <- predict(rp_fit, newdata = newdat, type = "hazard")
+rp_df <- data.frame(time = tgrid, hazard = as.numeric(rp_haz))
+head(rp_df)
+```
+
+```{r}
+# -----------------------------
+# 1. Cox cumulative baseline hazard plot
+# -----------------------------
+cox_bh <- basehaz(cox_fit, centered = FALSE)
+
+plot(cox_bh$time, cox_bh$hazard,
+     type = "s",
+     col = "blue",
+     lwd = 2,
+     xlab = "Time",
+     ylab = "Cumulative baseline hazard",
+     main = "Cox Model: Cumulative Baseline Hazard")
+
+# -----------------------------
+# 2. Royston-Parmar hazard plot
+# -----------------------------
+
+plot(tgrid, rp_haz,
+     type = "l",
+     col = "red",
+     lwd = 2,
+     xlab = "Time",
+     ylab = "Hazard",
+     main = "Royston-Parmar Model: Hazard Function")
+```
+```{r}
+#on the same Graph
+# -----------------------------
+# 1. Cox cumulative baseline hazard plot
+# -----------------------------
+cox_bh <- basehaz(cox_fit, centered = FALSE)
+
+plot(cox_bh$time, cox_bh$hazard,
+     type = "s",
+     col = "blue",
+     lwd = 2,
+     xlab = "Time",
+     ylab = "Cumulative baseline hazard",
+     main = "Cox Model: Cumulative Baseline Hazard")
+
+# -----------------------------
+# 2. Royston-Parmar hazard plot
+# -----------------------------
+lines(tgrid, rp_haz,
+      col = "red",
+      lwd = 2)
+
+legend("topleft",
+       legend = c("Cox cumulative baseline hazard", "Royston-Parmar hazard"),
+       col = c("blue", "red"),
+       lwd = 2,
+       lty = c(1, 1),
+       bty = "n")
+```
+
+## Interpretation
+The Cox hazard appears as a step function because the Cox model is semi-parametric, so the baseline hazard changes only at the observed event times.
+
+The Royston--Parmar hazard is smooth because it models the baseline hazard flexibly using splines.
+
+Overall, the Royston--Parmar curve is easier to interpret visually, while the Cox curve reflects the observed data more directly.
+
+
